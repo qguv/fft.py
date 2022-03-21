@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-fast fourier transform in a polynomial context
+The fast fourier transform (FFT) algorithm applied to polynomial evaluation and interpolation.
 '''
 
 import argparse
@@ -96,12 +96,12 @@ def fmt_polynomial(cs):
         yield f'{op}{c_fmt}{factor}'
 
 
-def normalize(x, ns=[-1, 0, 1], thresh=1e-10):
+def normalize(x, thresh=1e-15):
     if type(x) is complex:
         return complex(normalize(x.real), normalize(x.imag))
-    for n in ns:
-        if abs(x - n) < thresh:
-            return n
+    n = round(x)
+    if abs(x - n) < thresh:
+        return n
     return x
 
 
@@ -163,7 +163,7 @@ def cmd_interpolate(args):
     print(*fmt_polynomial(cs))
 
 
-if __name__ == '__main__':
+def gen_parser():
     parse = {'': argparse.ArgumentParser(description=__doc__)}
     parse[''].set_defaults(func=lambda x: parse[''].print_help())
     parse[''].add_argument('--verbose', action='store_true')
@@ -192,5 +192,9 @@ if __name__ == '__main__':
         nargs=argparse.REMAINDER,
     )
 
-    args = parse[''].parse_args()
+    return parse['']
+
+
+if __name__ == '__main__':
+    args = gen_parser().parse_args()
     args.func(args)
