@@ -24,8 +24,8 @@ def _fft(p: [complex], w) -> complex:
     if degree == 1:
         return p
 
-    q_odd = _fft(p[::2], w)
-    q_even = _fft(p[1::2], w)
+    q_even = _fft(p[::2], w)
+    q_odd = _fft(p[1::2], w)
 
     q = [0] * degree
     half_degree = int(degree // 2)
@@ -43,7 +43,7 @@ def is_power_2(x):
 def fft(cs: Polynomial) -> ValuesAtNthRootsOfUnity:
     degree = len(cs)
     while not is_power_2(degree):
-        cs.insert(0, 0)
+        cs.append(0)
         degree += 1
     w = math.e ** (2 * math.pi * 1j / degree)
     return _fft(cs, w)
@@ -52,8 +52,8 @@ def fft(cs: Polynomial) -> ValuesAtNthRootsOfUnity:
 def ifft(ys: ValuesAtNthRootsOfUnity) -> Polynomial:
     degree = len(ys)
     assert is_power_2(degree), 'number of points must be a power of 2'
-    w = (math.e ** (-2 * math.pi * 1j / degree)) / degree
-    return _fft(ys, w)
+    w = math.e ** (-2 * math.pi * 1j / degree)
+    return [y / degree for y in _fft(ys, w)]
 
 
 ################################
@@ -62,11 +62,11 @@ def ifft(ys: ValuesAtNthRootsOfUnity) -> Polynomial:
 ################################
 
 
-def fmt_values(ys: ValuesAtNthRootsOfUnity):
+def fmt_values(ys: ValuesAtNthRootsOfUnity, polar=False):
     degree = len(ys)
     w = math.e ** (2 * math.pi * 1j / degree)
     for i, y in enumerate(ys):
-        yield f'(ω{superscript(i)} = {fmtc(w ** i)}, {fmtc(y)})'
+        yield f'(ω{superscript(i)} = {fmtc(w ** i, polar=polar)}, {fmtc(y, polar=polar)})'
 
 
 def superscript(s):
@@ -74,40 +74,64 @@ def superscript(s):
 
 
 def fmt_polynomial(cs):
-    max_power = len(cs) - 1
-    yield 'P(x) ='
+    yield 'P(𝑥) ='
     first = True
-    for i, c in enumerate(cs):
+    for i, c in list(enumerate(cs))[::-1]:
+        c = normalize(c)
         if c == 0:
             continue
         if first:
             first = False
             op = ''
-        elif c.real <= 0:
+        elif c.real < 0 or (c.real == 0 and c.imag < 0):
             op = '- '
             c = -c
         else:
             op = '+ '
-        power = max_power - i
-        factor = f'x{superscript(power)}' if power else ''
-        c_fmt = fmtc(c, polar=False, parens_on_complex=(power != 0))
+        factor = f'𝑥{superscript(i)}' if i else ''
+        if i and c == 1:
+            c_fmt = ''
+        else:
+            c_fmt = fmtc(c, parens_on_complex=(i != 0))
         yield f'{op}{c_fmt}{factor}'
 
 
-def fmtc(x, polar=True, precision=2, parens_on_complex=False) -> complex or float:
+def normalize(x, ns=[-1, 0, 1], thresh=1e-10):
     if type(x) is complex:
-        if x.imag == 0:
-            return fmtc(x.real, precision=precision)
+        return complex(normalize(x.real), normalize(x.imag))
+    for n in ns:
+        if abs(x - n) < thresh:
+            return n
+    return x
+
+
+def fmtc(x, polar=False, precision=2, parens_on_complex=False) -> complex or float:
+    if type(x) is complex:
+        x = normalize(x)
+
         if polar:
             r, phase = cmath.polar(x)
-            s = f'{fmtc(r, precision=precision)} ∠ {fmtc(math.degrees(phase), precision=precision)}°'
-        elif x.imag < 0:
-            s = f'{fmtc(x.real, precision=precision)}-{fmtc(-x.imag, precision=precision)}i'
+            return f'({fmtc(r, precision=precision)} ∠ {fmtc(math.degrees(phase), precision=precision)}°)'
+
+        if x.imag == 0:
+            return fmtc(x.real, precision=precision)
+
+        if x.real == 0:
+            if x.imag == 1:
+                return '𝑖'
+            elif x.imag == -1:
+                return '-𝑖'
+            elif x.imag < 0:
+                return f'-{fmtc(-x.imag, precision=precision)}𝑖'
+            else:
+                return f'{fmtc(x.imag, precision=precision)}𝑖'
+
+        if x.imag < 0:
+            s = f'{fmtc(x.real, precision=precision)}-{fmtc(-x.imag, precision=precision)}𝑖'
         else:
-            s = f'{fmtc(x.real, precision=precision)}+{fmtc(x.imag, precision=precision)}i'
-        if parens_on_complex:
-            s = f'({s})'
-        return s
+            s = f'{fmtc(x.real, precision=precision)}+{fmtc(x.imag, precision=precision)}𝑖'
+
+        return f'({s})' if parens_on_complex else s
 
     if type(x) is float:
         if x.is_integer():
@@ -122,18 +146,18 @@ def fmtc(x, polar=True, precision=2, parens_on_complex=False) -> complex or floa
 
 
 def cmd_evaluate(args):
-    cs = [float(c_raw) for c_raw in [args.A, *args.B]]
+    cs = [complex(c_raw.replace('i', 'j')) for c_raw in [args.A, *args.B]][::-1]
     if args.verbose:
         print("evaluating polynomial:", *fmt_polynomial(cs))
         print('points:')
     ys = fft(cs)
-    print(*fmt_values(ys), sep='\n')
+    print(*fmt_values(ys, polar=args.polar), sep='\n')
 
 
 def cmd_interpolate(args):
-    ys = [float(y) for y in [args.Y0, *args.Y1]]
+    ys = [complex(y.replace('i', 'j')) for y in [args.Y0, *args.Y1]]
     if args.verbose:
-        print("interpolating points:", *fmt_values(ys), sep='\n')
+        print("interpolating points:", *fmt_values(ys, polar=args.polar), sep='\n')
         print("polynomial: ", end='')
     cs = ifft(ys)
     print(*fmt_polynomial(cs))
@@ -143,6 +167,7 @@ if __name__ == '__main__':
     parse = {'': argparse.ArgumentParser(description=__doc__)}
     parse[''].set_defaults(func=lambda x: parse[''].print_help())
     parse[''].add_argument('--verbose', action='store_true')
+    parse[''].add_argument('--polar', action='store_true', help='show points in polar format')
     parse['_'] = parse[''].add_subparsers()
 
     msg = (
@@ -152,7 +177,7 @@ if __name__ == '__main__':
     parse['evaluate'] = parse['_'].add_parser('evaluate', help=msg, description=msg)
     parse['evaluate'].set_defaults(func=cmd_evaluate)
     parse['evaluate'].add_argument('A', help='coefficient of the x^N term')
-    parse['evaluate'].add_argument('B', help='coefficient of the x^(N-1) term, and so on', nargs='*')
+    parse['evaluate'].add_argument('B', help='coefficient of the x^(N-1) term, and so on', nargs=argparse.REMAINDER)
 
     msg = (
         'inverse FFT: calculate the coefficients of a polynomial of degree N given each of the values of the'
@@ -164,7 +189,7 @@ if __name__ == '__main__':
     parse['interpolate'].add_argument(
         'Y1',
         help='value of the polynomial at x=ω¹, the second Nth root of unity, etc.',
-        nargs='*',
+        nargs=argparse.REMAINDER,
     )
 
     args = parse[''].parse_args()
